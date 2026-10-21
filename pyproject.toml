@@ -1,0 +1,17 @@
+[project]
+name = "tennis-winprob"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.156.4",
+    "matplotlib>=3.11.2",
+    "numpy>=2.5.4",
+    "pandas>=3.0.6",
+    "pytest>=9.1.1",
+    "scikit-learn>=1.9.1",
+    "seaborn>=0.13.2",
+    "torch>=2.14.1",
+    "uvicorn>=0.54.0",
+]
