@@ -16,10 +16,14 @@ Usage (from the repo root):
     uv run src/build_dataset.py
 """
 import sys
+from collections import Counter
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from states import state_violations  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 RAW = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "data" / "raw" / "slam"
@@ -33,6 +37,9 @@ NUMERIC = ["PointNumber", "SetNo", "GameNo", "PointServer", "PointWinner",
 OUTCOME_COLS = ["P1Ace", "P2Ace", "P1DoubleFault", "P2DoubleFault",
                 "P1Winner", "P2Winner", "P1UnfErr", "P2UnfErr"]  # results of the CURRENT point
 NORMAL = {"0": 0, "15": 1, "30": 2, "40": 3, "AD": 4}
+
+
+VIOLATIONS = Counter()
 
 
 def read(path: Path) -> pd.DataFrame:
@@ -64,7 +71,7 @@ def to_points(raw: pd.Series, in_tiebreak: pd.Series) -> pd.Series:
 
 def process_file(key: str):
     info = {"file": key, "status": "ok", "mens_matches": 0, "invalid": 0,
-            "unfinished": 0, "unparsed": 0, "kept": 0}
+            "unfinished": 0, "unparsed": 0, "bad_state": 0, "kept": 0}
     pts = read(RAW / f"{key}-points.csv")
 
     missing = [c for c in REQUIRED if c not in pts.columns]
@@ -145,6 +152,14 @@ def process_file(key: str):
     for col in OUTCOME_COLS:   # results of the current point; shift before using them as features
         out[col] = pd.to_numeric(pts[col], errors="coerce") if col in pts else np.nan
 
+    # drop whole matches that contain an impossible state (see states.py)
+    violations = state_violations(out)
+    for rule in violations.columns:
+        VIOLATIONS[rule] += int(violations[rule].sum())
+    bad_state = set(out.loc[violations.any(axis=1), "match_id"])
+    info["bad_state"] = len(bad_state)
+    out = out[~out["match_id"].isin(bad_state)]
+
     names = read(RAW / f"{key}-matches.csv")
     keep_cols = [c for c in ("match_id", "player1", "player2", "player1id", "player2id") if c in names.columns]
     info["kept"] = out["match_id"].nunique()
@@ -167,6 +182,8 @@ def main() -> None:
     pd.set_option("display.max_rows", 300)
     print("=== Per-file report (men's matches only) ===")
     print(report.to_string(index=False))
+    print("\nRows that broke each validity rule BEFORE dropping those matches (see src/states.py):")
+    print({k: v for k, v in VIOLATIONS.items()})
 
     points = pd.concat(frames, ignore_index=True)
     points["split"] = np.where(points["year"] <= 2021, "train", np.where(points["year"] == 2022, "val", "test"))
