@@ -3,6 +3,8 @@ from torch.utils.data import Dataset
 import pandas as pd
 import numpy as np
 from torch.nn.utils.rnn import pad_sequence
+import torch
+import torch.nn as nn
 
 class TennisSequenceDataset(Dataset):
     def __init__(self, feature_df: pd.DataFrame, labels: pd.Series, match_ids: pd.Series):
@@ -64,3 +66,39 @@ def tennis_collate_fn(batch):
     stacked_labels = torch.stack(labels_list)
     
     return padded_features, stacked_labels, mask
+
+
+class TennisGRUModel(nn.Module):
+    def __init__(self, input_dim: int, hidden_dim: int, num_layers: int = 1, dropout: float = 0.2):
+        super().__init__()
+        
+        # 1. Define the GRU layer
+        # Hint: Use nn.GRU with input_dim, hidden_dim, num_layers, batch_first=True, and dropout
+        gru_dropout = dropout if num_layers > 1 else 0.0
+        self.gru = nn.GRU(input_dim, hidden_dim, num_layers=num_layers, batch_first=True, dropout=gru_dropout)
+
+        self.dropout = nn.Dropout(dropout)
+        
+        # 3. Define a final fully connected (Linear) layer to map hidden states to a single prediction logit
+        # Hint: Use nn.Linear(hidden_dim, 1)
+        self.fc = nn.Linear(hidden_dim, 1)
+
+    def forward(self, x, mask=None):
+        """
+        Forward pass for the GRU model.
+        x shape: (batch_size, seq_len, input_dim)
+        mask shape: (batch_size, seq_len)
+        """
+        # 1. Pass the input features through the GRU layer
+        # Hint: gru_out, _ = self.gru(x)
+        gru_out, _ = self.gru(x)
+        
+        # 2. Apply dropout to the GRU outputs
+        gru_out = self.dropout(gru_out)
+        
+        # 3. Pass through the linear layer to get raw prediction scores (logits)
+        out = self.fc(gru_out)
+        
+        # 4. Squeeze the last dimension so shape matches batch labels: (batch_size, seq_len) or just the final step
+        # Hint: out.squeeze(-1)
+        return out.squeeze(-1)

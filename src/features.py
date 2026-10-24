@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+from typing import Optional
 
 def compute_running_stats(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -31,7 +32,7 @@ def compute_running_stats(df: pd.DataFrame) -> pd.DataFrame:
     
     return stats
 
-def build_features(df: pd.DataFrame, is_train: bool = True, scaler_stats=None) -> tuple[pd.DataFrame, dict]:
+def build_features(df: pd.DataFrame, is_train: bool = True, scaler_stats=None) -> tuple[pd.DataFrame, Optional[dict]]:    
     """
     Builds the final feature matrix for model training or inference.
     
