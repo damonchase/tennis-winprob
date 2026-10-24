@@ -102,3 +102,21 @@ class TennisGRUModel(nn.Module):
         # 4. Squeeze the last dimension so shape matches batch labels: (batch_size, seq_len) or just the final step
         # Hint: out.squeeze(-1)
         return out.squeeze(-1)
+
+class TennisMLPModel(nn.Module):
+    def __init__(self, input_dim, hidden_dim=64, dropout=0.2):
+        super().__init__()
+        # TODO: Define a sequential or linear layers for the MLP
+        # Hint: Linear -> ReLU -> Dropout -> Linear -> outputlogit (size 1)
+        self.net = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, 1)
+        )
+
+    def forward(self, x, mask=None):
+        # x shape: (batch, time, features) or flattened
+        # Note: If your dataloader feeds sequences, you can apply the MLP 
+        # independently to each time step: (batch * time, features) -> reshape back!
+        return self.net(x).squeeze(-1)

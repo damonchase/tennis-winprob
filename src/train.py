@@ -99,13 +99,7 @@ if __name__ == "__main__":
     print("Loading data...")
     raw_df = pd.read_parquet("../data/processed/points_men.parquet")
     
-    # 3. Derive match-level outcome label (1 if Player 1 won more sets, 0 otherwise)
-    print("Deriving match-level labels...")
-    last_points = raw_df.groupby("match_id").last()
-    match_winners = (last_points["p1_sets"] > last_points["p2_sets"]).astype(float)
-    raw_df["p1_win"] = raw_df["match_id"].map(match_winners)
-    
-    # 4. Filter into train and validation splits using the 'split' column
+    # 3. Filter into train and validation splits using the 'split' column
     print("Splitting datasets...")
     train_raw = raw_df[raw_df["split"] == "train"]
     val_raw = raw_df[raw_df["split"] == "val"]
@@ -116,8 +110,8 @@ if __name__ == "__main__":
     val_feature_df, _ = build_features(val_raw, is_train=False, scaler_stats=scaler_stats)
     
     # 6. Instantiate datasets
-    train_dataset = TennisSequenceDataset(train_feature_df, train_raw["p1_win"], train_raw["match_id"])
-    val_dataset = TennisSequenceDataset(val_feature_df, val_raw["p1_win"], val_raw["match_id"])
+    train_dataset = TennisSequenceDataset(train_feature_df, train_raw["p1_wins"], train_raw["match_id"])
+    val_dataset = TennisSequenceDataset(val_feature_df, val_raw["p1_wins"], val_raw["match_id"])
     
     # 7. Create DataLoaders
     train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, collate_fn=tennis_collate_fn)
@@ -133,7 +127,7 @@ if __name__ == "__main__":
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     
     # 10. Run the training loop over multiple epochs
-    num_epochs = 5
+    num_epochs = 10
     print("Starting training loop...")
     for epoch in range(num_epochs):
         train_loss = train_epoch(model, train_loader, optimizer, criterion, device)

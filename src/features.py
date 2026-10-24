@@ -1,5 +1,4 @@
 import pandas as pd
-import numpy as np
 from typing import Optional
 
 def compute_running_stats(df: pd.DataFrame) -> pd.DataFrame:
@@ -10,7 +9,7 @@ def compute_running_stats(df: pd.DataFrame) -> pd.DataFrame:
     stats = pd.DataFrame(index=df.index)
     
     # 1. Did the server win this point?
-    server_won = ((df["server"] == 1) & (df["p1_wins"] == 1)) | ((df["server"] == 2) & (df["p1_wins"] == 0))
+    server_won = df["server"] == df["point_winner"]
     server_won = server_won.astype(int)
     
     # 2. Track cumulative stats per match, shifted by 1 so point t doesn't see point t's outcome
@@ -20,8 +19,9 @@ def compute_running_stats(df: pd.DataFrame) -> pd.DataFrame:
         "serve_played": 1
     })
     
-    # Group by match_id, take cumsum, then shift down by 1 within each match
-    grouped = temp_df.groupby("match_id")[["server_won", "serve_played"]].cumsum().shift(1, fill_value=0)
+    # Group by match_id and shift within each match so no previous match can leak in.
+    grouped = temp_df.groupby("match_id", sort=False)[["server_won", "serve_played"]].cumsum()
+    grouped = grouped.groupby(temp_df["match_id"], sort=False).shift(1, fill_value=0)
     
     # 3. Compute smoothed running serve win rate (e.g., adding pseudocounts: 2 wins out of 3 points at ~64% tour average)
     # This prevents division by zero and extreme 0% or 100% rates on the very first point of a match.

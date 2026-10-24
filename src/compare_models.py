@@ -1,5 +1,4 @@
 import torch
-import torch.nn as nn
 from torch.utils.data import DataLoader
 import pandas as pd
 import pickle
@@ -9,29 +8,25 @@ from models import TennisSequenceDataset, tennis_collate_fn, TennisGRUModel
 from features import build_features
 
 def compare_models():
-    print("Loading data and baselines...")
+    print("Loading test data and baselines (GRU calibrated on validation data)...")
     raw_df = pd.read_parquet("../data/processed/points_men.parquet")
     baseline_df = pd.read_parquet("../data/processed/baseline_preds.parquet")
     
-    # 1. Derive match-level outcome label for raw_df
-    # Hint: group by 'match_id', take .last(), and check if p1_sets > p2_sets
-    last_points = raw_df.groupby("match_id").last()
-    match_winners = (last_points["p1_sets"] > last_points["p2_sets"]).astype(float)
-    raw_df["p1_win"] = raw_df["match_id"].map(match_winners)
-    
-    val_raw = raw_df[raw_df["split"] == "val"]
+    eval_raw = raw_df[raw_df["split"] == "test"]
     
     # 2. Load trained GRU model and scaler stats
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     with open("../models/scaler_stats.pkl", "rb") as f:
         scaler_stats = pickle.load(f)
+    with open("../models/temperature.pkl", "rb") as f:
+        temperature = pickle.load(f)
         
-    val_feature_df, _ = build_features(val_raw, is_train=False, scaler_stats=scaler_stats)
-    val_dataset = TennisSequenceDataset(val_feature_df, val_raw["p1_win"], val_raw["match_id"])
-    val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False, collate_fn=tennis_collate_fn)
+    eval_feature_df, _ = build_features(eval_raw, is_train=False, scaler_stats=scaler_stats)
+    eval_dataset = TennisSequenceDataset(eval_feature_df, eval_raw["p1_wins"], eval_raw["match_id"])
+    eval_loader = DataLoader(eval_dataset, batch_size=32, shuffle=False, collate_fn=tennis_collate_fn)
     
-    input_dim = val_feature_df.shape[1]
+    input_dim = eval_feature_df.shape[1]
     model = TennisGRUModel(input_dim=input_dim, hidden_dim=64).to(device)
     model.load_state_dict(torch.load("../models/tennis_gru.pth", map_location=device))
     model.eval()
@@ -41,7 +36,7 @@ def compare_models():
     gru_labels = []
     
     with torch.no_grad():
-        for batch_features, batch_labels, mask in val_loader:
+        for batch_features, batch_labels, mask in eval_loader:
             batch_features = batch_features.to(device)
             mask = mask.to(device)
             
@@ -51,7 +46,7 @@ def compare_models():
             # Hint: match_lengths = mask.sum(dim=1).long() - 1
             match_lengths = mask.sum(dim=1).long() - 1
             final_preds = preds[torch.arange(preds.size(0), device=device), match_lengths]
-            probs = torch.sigmoid(final_preds)
+            probs = torch.sigmoid(final_preds / temperature)
             
             gru_probs.extend(probs.cpu().numpy())
             gru_labels.extend(batch_labels.numpy())
@@ -61,13 +56,14 @@ def compare_models():
     gru_brier = brier_score_loss(gru_labels, gru_probs)
     
     # 4. Extract baseline predictions for validation matches at their final point
-    val_baselines = baseline_df[baseline_df["split"] == "val"].groupby("match_id").last()
+    eval_baselines = baseline_df[baseline_df["split"] == "test"].groupby("match_id").last()
     
-    elo_probs = val_baselines["elo_only"].to_numpy()
-    markov_probs = val_baselines["markov"].to_numpy()
+    elo_probs = eval_baselines["elo_only"].to_numpy()
+    markov_probs = eval_baselines["markov"].to_numpy()
     
     # TODO: Gather ground-truth labels corresponding to the baseline match IDs
-    baseline_labels = [raw_df[raw_df["match_id"] == match_id]["p1_win"].iloc[0] for match_id in val_baselines.index]    
+    labels_by_match = eval_raw.groupby("match_id")["p1_wins"].first()
+    baseline_labels = labels_by_match.reindex(eval_baselines.index).to_numpy()
     
     # TODO: Compute metrics for elo_only and markov baselines
     elo_auc = roc_auc_score(baseline_labels, elo_probs)
