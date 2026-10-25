@@ -67,9 +67,7 @@ def build_features(df: pd.DataFrame, is_train: bool = True, scaler_stats=None) -
     for col in running_stats.columns:
         features[col] = running_stats[col]
     
-    # 4. Standardization of continuous features (e.g., elo_diff_logit)
-    # TODO: We need to write the scaling logic here so that train mean/std are used.
-    # 4. Standardization of continuous features
+    # Standardize continuous features using training-set statistics.
     continuous_cols = ["elo_diff_logit", "server_running_win_rate"]
     
     if is_train:

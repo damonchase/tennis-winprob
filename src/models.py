@@ -1,9 +1,7 @@
 import torch
 from torch.utils.data import Dataset
 import pandas as pd
-import numpy as np
 from torch.nn.utils.rnn import pad_sequence
-import torch
 import torch.nn as nn
 
 class TennisSequenceDataset(Dataset):
@@ -13,7 +11,11 @@ class TennisSequenceDataset(Dataset):
         """
         # 1. Store the unique match IDs as a list or array so we can index them by position
         # Hint: use match_ids.unique()
-        self.match_ids = match_ids.unique().tolist()
+        if not feature_df.index.is_unique:
+            raise ValueError("Feature rows must have a unique index.")
+        if not feature_df.index.equals(labels.index) or not feature_df.index.equals(match_ids.index):
+            raise ValueError("Features, labels, and match IDs must have identical indexes.")
+        self.match_ids = match_ids.drop_duplicates().tolist()
         
         # 2. Store feature_df and labels inside self for easy access
         self.feature_df = feature_df
@@ -21,7 +23,12 @@ class TennisSequenceDataset(Dataset):
         
         # 3. Pre-group the indices or rows by match_id to make __getitem__ fast
         # Hint: use a dictionary or groupby object to map each match_id to its row positions
-        self.match_groups = dict(feature_df.groupby(match_ids).groups)
+        self.match_groups = dict(feature_df.groupby(match_ids, sort=False).groups)
+        if list(self.match_groups) != self.match_ids:
+            raise ValueError("Grouped match IDs do not preserve the source order.")
+        for match_id, row_indices in self.match_groups.items():
+            if self.labels.loc[row_indices].nunique() != 1:
+                raise ValueError(f"Match {match_id!r} has inconsistent outcome labels.")
 
     def __len__(self) -> int:
         # Return the total number of unique matches
@@ -59,7 +66,9 @@ def tennis_collate_fn(batch):
     # 3. Create a binary mask of shape (batch_size, max_seq_len) where 1 means a real point 
     # and 0 means padding. 
     # Hint: We can build this by checking where features are non-zero or tracking lengths.
-    mask = (padded_features[:, :, 0] != 0.0).float()
+    lengths = torch.tensor([len(features) for features in features_tuple])
+    steps = torch.arange(padded_features.size(1)).unsqueeze(0)
+    mask = (steps < lengths.unsqueeze(1)).float()
 
     # 4. Stack the labels into a single tensor
     # Hint: torch.stack(labels_list)

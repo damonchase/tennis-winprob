@@ -53,8 +53,8 @@ def predict_split(points: pd.DataFrame, matches: pd.DataFrame, base_by_slam: dic
     parts = []
     info = matches.set_index("match_id")
     for match_id, rows in points.groupby("match_id", sort=False):
-        p_elo = float(info.loc[match_id, "p_elo_blend"])
-        slam = info.loc[match_id, "slam"]
+        p_elo = info.loc[[match_id], "p_elo_blend"].to_numpy(dtype=float)[0]
+        slam = info.at[match_id, "slam"]
         p1s, p2s = serve_probs(p_elo, base_by_slam.get(slam, base_by_slam["_overall"]))
         model = MarkovMatch(p1s, p2s)
         states = zip(*(rows[c].to_numpy() for c in STATE_COLS))
@@ -79,7 +79,10 @@ def main() -> None:
         points = points[~points["match_id"].isin(bad)]
 
     train = points[points["split"] == "train"]
-    base_by_slam = (train["point_winner"] == train["server"]).groupby(train["slam"]).mean().to_dict()
+    slam_rates = (train["point_winner"] == train["server"]).groupby(train["slam"]).mean().to_dict()
+    base_by_slam: dict[object, float] = {
+        slam: float(rate) for slam, rate in slam_rates.items()
+    }
     base_by_slam["_overall"] = float((train["point_winner"] == train["server"]).mean())   # fallback for unseen slams
     print("Average share of points won by the server, training years:",
           {k: round(v, 3) for k, v in base_by_slam.items()})

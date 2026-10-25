@@ -1,3 +1,5 @@
+import json
+
 import streamlit as st
 import pandas as pd
 import requests
@@ -25,10 +27,14 @@ n_points = st.slider("Evaluate up to point number:", 1, len(match_points), min(2
 
 if st.button("Calculate Win Probability", type="primary"):
     subset = match_points.head(n_points)
-    payload = {"points": subset.to_dict(orient="records")}
+    payload = json.dumps({"points": subset.to_dict(orient="records")})
     
     try:
-        response = requests.post("https://tennis-winprob-api-6840016701.us-central1.run.app/predict", json=payload)
+        response = requests.post(
+            "https://tennis-winprob-api-6840016701.us-central1.run.app/predict",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+        )
         if response.status_code == 200:
             data = response.json()
             p1_prob = data["p1_win_probability"]

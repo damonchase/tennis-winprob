@@ -17,6 +17,8 @@ All intervals come from resampling MATCHES (points inside a match are strongly c
 Usage (from the repo root):
     uv run src/compare_models.py data/processed/gru_test_preds.csv
 """
+from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -76,10 +78,21 @@ def load_merged(gru_path: Path) -> pd.DataFrame:
         raise SystemExit(f"{gru_path} must have columns match_id, point_idx, gru. Missing: {sorted(missing)}. Found: {gru.columns.tolist()}")
     base = read_table(find("baseline_preds"))
     base = base[base["split"] == "test"]
-    df = base.merge(gru[["match_id", "point_idx", "gru"]], on=["match_id", "point_idx"], how="inner")
+    keys = ["match_id", "point_idx"]
+    if base.duplicated(keys).any() or gru.duplicated(keys).any():
+        raise SystemExit("Baseline and GRU predictions must each contain unique (match_id, point_idx) keys.")
+    probabilities = gru["gru"].to_numpy()
+    if not np.isfinite(probabilities).all() or ((probabilities < 0) | (probabilities > 1)).any():
+        raise SystemExit("GRU predictions must be finite probabilities between 0 and 1.")
+    df = base.merge(gru[keys + ["gru"]], on=keys, how="outer", indicator=True, validate="one_to_one")
+    unmatched = df["_merge"].value_counts()
+    if len(df) != len(base) or unmatched.get("left_only", 0) or unmatched.get("right_only", 0):
+        raise SystemExit(
+            f"Prediction coverage mismatch: {unmatched.get('left_only', 0)} baseline points missing GRU "
+            f"predictions, {unmatched.get('right_only', 0)} extra GRU points."
+        )
+    df = df.drop(columns="_merge")
     print(f"Test points in baseline file: {len(base)}   in GRU file: {len(gru)}   matched: {len(df)}")
-    if len(df) < 0.99 * min(len(base), len(gru)):
-        print("WARNING: fewer than 99% of points matched. Check that match_id and point_idx mean the same thing in both files.")
     points = read_table(find("points_men"))[["match_id", "point_idx", "set_no", "is_tiebreak"]]
     matches = pd.read_csv(PROC / "matches_men_elo.csv")[["match_id", "slam"]]
     df = df.merge(points, on=["match_id", "point_idx"], how="left").merge(matches, on="match_id", how="left")
@@ -99,7 +112,7 @@ class Bootstrap:
         self.loss = {"brier": {c: (df[c].to_numpy() - y) ** 2 for c in MODELS},
                      "log_loss": {c: point_losses(y, df[c].to_numpy()) for c in MODELS}}
 
-    def sums(self, kind: str, model: str, cat: pd.Categorical):
+    def sums(self, kind: str, model: str, cat: pd.Categorical[str]):
         """Per-match sums and counts for each slice: arrays of shape (matches, slices)."""
         k = len(cat.categories)
         keep = cat.codes >= 0
@@ -108,7 +121,7 @@ class Bootstrap:
         s = np.bincount(idx, weights=self.loss[kind][model][keep], minlength=self.m * k).reshape(self.m, k)
         return s, n
 
-    def table(self, kind: str, cat: pd.Categorical, a: str = "gru", b: str = "markov") -> pd.DataFrame:
+    def table(self, kind: str, cat: pd.Categorical[str], a: str = "gru", b: str = "markov") -> pd.DataFrame:
         sa, n = self.sums(kind, a, cat)
         sb, _ = self.sums(kind, b, cat)
         with np.errstate(divide="ignore", invalid="ignore"):   # a slice can be empty in some resamples
@@ -178,7 +191,7 @@ def main() -> None:
     print(diffs.to_string(index=False))
 
     # ---- slices ----
-    progress = pd.Categorical(pd.cut(df["progress"], np.linspace(0, 1, 11), include_lowest=True, right=False,
+    progress = pd.Categorical(pd.cut(df["progress"], np.linspace(0, 1, 11).tolist(), include_lowest=True, right=False,
                                      labels=[f"{i * 10}-{i * 10 + 10}%" for i in range(10)]))
     fav = np.maximum(df["elo_only"], 1 - df["elo_only"])
     favorite = pd.Categorical(pd.cut(fav, [0.5, 0.6, 0.7, 0.8, 1.0001], right=False,

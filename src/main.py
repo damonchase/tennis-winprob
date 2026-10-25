@@ -17,7 +17,7 @@ app = FastAPI(
 )
 
 # Global model artifacts
-model = None
+model: TennisGRUModel | None = None
 scaler_stats = None
 temperature = 1.0
 input_dim = None
@@ -57,6 +57,8 @@ class MatchPayload(BaseModel):
 def predict_match(payload: MatchPayload):
     if not payload.points:
         raise HTTPException(status_code=400, detail="Point sequence payload cannot be empty.")
+    if model is None:
+        raise HTTPException(status_code=503, detail="Prediction model is not loaded.")
         
     try:
         # 1. Convert incoming JSON point records into a DataFrame
