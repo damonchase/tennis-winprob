@@ -32,29 +32,53 @@ def run_bootstrap():
     model.load_state_dict(torch.load("../models/tennis_gru.pth", map_location=device))
     model.eval()
     
-    # Extract GRU predictions per match_id
+    # Initialize dictionary for match-level log loss and lists for point-by-point CSV
     gru_preds_dict = {}
+    test_match_ids = []
+    test_point_idx = []
+    test_probs = []
+
     dataset_match_ids = list(eval_raw["match_id"].unique())
     batch_idx_offset = 0
+
     with torch.no_grad():
         for batch_features, batch_labels, mask in eval_loader:
             batch_features = batch_features.to(device)
             mask = mask.to(device)
             
+            # Forward pass outputs logits of shape (batch_size, seq_len)
             preds = model(batch_features, mask)
-            match_lengths = mask.sum(dim=1).long() - 1
-            final_logits = preds[torch.arange(preds.size(0), device=device), match_lengths]
             
-            calibrated_logits = final_logits / temperature
-            probs = torch.sigmoid(calibrated_logits).cpu().numpy()
+            # Apply temperature scaling and sigmoid
+            calibrated_preds = preds / temperature
+            probs = torch.sigmoid(calibrated_preds).cpu().numpy()
+            mask_np = mask.cpu().numpy()
             
-            batch_size = len(probs)
+            batch_size = probs.shape[0]
             for i in range(batch_size):
                 m_id = dataset_match_ids[batch_idx_offset + i]
-                gru_preds_dict[m_id] = float(probs[i])
+                valid_len = int(mask_np[i].sum())
                 
+                for t in range(valid_len):
+                    test_match_ids.append(m_id)
+                    test_point_idx.append(t)
+                    test_probs.append(float(probs[i, t]))
+                
+                # Store the final valid point's probability for match-level evaluation
+                gru_preds_dict[m_id] = float(probs[i, valid_len - 1])
+                    
             batch_idx_offset += batch_size
 
+    # Save point-by-point test predictions to CSV
+    import os
+    os.makedirs("../data/processed", exist_ok=True)
+    out = pd.DataFrame({
+        "match_id": test_match_ids,
+        "point_idx": test_point_idx,
+        "gru": test_probs,
+    })
+    out.to_csv("../data/processed/gru_test_preds.csv", index=False)
+    print("Saved point-by-point GRU test predictions to ../data/processed/gru_test_preds.csv")        # ----------------------------
     # Filter test split for baselines
     eval_df = baseline_df[baseline_df["split"] == "test"]
     match_groups = eval_df.groupby("match_id")
