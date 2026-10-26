@@ -8,7 +8,7 @@ st.title("🎾 Tennis Live Win Probability")
 
 @st.cache_data
 def load_metadata():
-    return pd.read_csv("../data/processed/matches_men.csv")
+    return pd.read_csv("github-data/matches_men.csv")
 
 matches_df = load_metadata()
 
@@ -19,7 +19,7 @@ match_row = matches_df[matches_df["match_id"] == match_id].iloc[0]
 st.markdown(f"**{match_row['player1']}** vs **{match_row['player2']}** *({match_row['slam'].upper()} {match_row['year']})*")
 
 # Load points for selected match
-points_df = pd.read_parquet("../data/processed/points_men.parquet")
+points_df = pd.read_parquet("github-data/points_men.parquet")
 match_points = points_df[points_df["match_id"] == match_id]
 
 # Point progression slider
