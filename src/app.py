@@ -11,9 +11,14 @@ def load_metadata():
     return pd.read_csv("github-data/matches_men.csv")
 
 matches_df = load_metadata()
+matches_df["match_title"] = matches_df["match_id"].astype("string") + " - " + matches_df["player1"].astype("string") + " vs " + matches_df["player2"].astype("string")
 
 # Select match
-match_id = st.selectbox("Select Match ID", matches_df["match_id"].tolist())
+match_title = st.selectbox("Select Match ID", matches_df["match_title"].tolist())
+
+# extract match id from match title
+match_id = match_title.split(" - ")[0]
+
 match_row = matches_df[matches_df["match_id"] == match_id].iloc[0]
 
 st.markdown(f"**{match_row['player1']}** vs **{match_row['player2']}** *({match_row['slam'].upper()} {match_row['year']})*")
